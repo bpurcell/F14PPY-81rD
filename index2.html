@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>F14PPY 81rD</title>
+  <style>
+    body {
+      background-color: black;
+      color: white;
+      font-family: monospace;
+      margin: 0;
+      overflow: hidden;
+    }
+    pre {
+      line-height: 1em;
+      font-size: 16px;
+      margin: 20px;
+    }
+  </style>
+</head>
+<body>
+<pre id="game"></pre>
+<script>
+  // Constants
+  const ROWS = 20;
+  const COLS = 40;
+  const GRAVITY = 0.5;
+  const FLAP_STRENGTH = -6;
+  const OBSTACLE_INTERVAL = 30; // frames between obstacles
+  const OBSTACLE_GAP = 6;
+  const GAME_SPEED = 100; // ms per frame
+
+  // Game state
+  let bird = { row: Math.floor(ROWS / 2), col: 5, velocity: 0 };
+  let obstacles = []; // each obstacle: { col: number, gapStart: number }
+  let frameCount = 0;
+  let gameOver = false;
+
+  const gameElem = document.getElementById('game');
+
+  function createObstacle() {
+    const gapStart = Math.floor(Math.random() * (ROWS - OBSTACLE_GAP - 2)) + 1;
+    obstacles.push({ col: COLS - 1, gapStart });
+  }
+
+  function update() {
+    if (gameOver) return;
+
+    frameCount++;
+
+    // Bird physics
+    bird.velocity += GRAVITY;
+    bird.row += bird.velocity;
+    if (bird.row < 0) {
+      bird.row = 0;
+      bird.velocity = 0;
+    }
+    if (bird.row > ROWS - 1) {
+      bird.row = ROWS - 1;
+      gameOver = true;
+    }
+
+    // Create obstacles at intervals
+    if (frameCount % OBSTACLE_INTERVAL === 0) createObstacle();
+
+    // Move obstacles left
+    obstacles.forEach(ob => ob.col--);
+    if (obstacles.length && obstacles[0].col < 0) obstacles.shift();
+
+    // Collision detection
+    obstacles.forEach(ob => {
+      if (ob.col === bird.col) {
+        if (Math.round(bird.row) < ob.gapStart || Math.round(bird.row) > ob.gapStart + OBSTACLE_GAP) {
+          gameOver = true;
+        }
+      }
+    });
+
+    draw();
+  }
+
+  function draw() {
+    // Initialize empty screen
+    let screen = [];
+    for (let r = 0; r < ROWS; r++) {
+      screen[r] = Array(COLS).fill(' ');
+    }
+
+    // Draw bird
+    const birdRow = Math.round(bird.row);
+    if (birdRow >= 0 && birdRow < ROWS && bird.col >= 0 && bird.col < COLS) {
+      screen[birdRow][bird.col] = '@';
+    }
+
+    // Draw obstacles
+    obstacles.forEach(ob => {
+      for (let r = 0; r < ROWS; r++) {
+        if (r < ob.gapStart || r > ob.gapStart + OBSTACLE_GAP) {
+          if (ob.col >= 0 && ob.col < COLS) {
+            screen[r][ob.col] = '|';
+          }
+        }
+      }
+    });
+
+    // Convert screen array to text
+    let output = screen.map(row => row.join('')).join('\n');
+    if (gameOver) output += "\nGAME OVER";
+    gameElem.textContent = output;
+  }
+
+  function flap() {
+    bird.velocity = FLAP_STRENGTH;
+  }
+
+  // Listen for spacebar press to flap
+  document.addEventListener('keydown', e => {
+    if (e.code === "Space") flap();
+  });
+
+  // Start game loop
+  setInterval(update, GAME_SPEED);
+</script>
+</body>
+</html>
