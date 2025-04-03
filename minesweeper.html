@@ -205,34 +205,98 @@
                 this.rows = rows;
                 this.cols = cols;
                 this.mines = mines;
-                this.grid = [];
-                this.revealed = [];
-                this.flags = [];
                 this.gameOver = false;
                 this.firstClick = true;
                 this.startTime = null;
                 this.timer = null;
                 this.remainingMines = mines;
                 this.remainingFlags = mines;
+                
+                // Initialize arrays
+                this.grid = Array(this.rows).fill().map(() => Array(this.cols).fill(0));
+                this.revealed = Array(this.rows).fill().map(() => Array(this.cols).fill(false));
+                this.flags = Array(this.rows).fill().map(() => Array(this.cols).fill(false));
+                
+                // Cache DOM elements
+                this.gridElement = document.getElementById('grid');
+                this.minesCountElement = document.getElementById('mines-count');
+                this.flagsElement = document.getElementById('flags');
+                this.timerElement = document.getElementById('timer');
+                
+                // Create grid structure once
+                this.createGridStructure();
+            }
+
+            createGridStructure() {
+                this.gridElement.innerHTML = '';
+                this.cells = [];
+                
+                for (let i = 0; i < this.rows; i++) {
+                    const row = document.createElement('div');
+                    row.className = 'row';
+                    this.cells[i] = [];
+                    
+                    for (let j = 0; j < this.cols; j++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'cell';
+                        cell.dataset.row = i;
+                        cell.dataset.col = j;
+                        
+                        cell.addEventListener('click', () => this.reveal(i, j));
+                        cell.addEventListener('contextmenu', (e) => {
+                            e.preventDefault();
+                            this.toggleFlag(i, j);
+                        });
+                        
+                        this.cells[i][j] = cell;
+                        row.appendChild(cell);
+                    }
+                    this.gridElement.appendChild(row);
+                }
             }
 
             init() {
-                // Initialize empty grid
+                // Reset game state
+                this.gameOver = false;
+                this.firstClick = true;
+                this.remainingMines = this.mines;
+                this.remainingFlags = this.mines;
+                
+                // Reset arrays
                 for (let i = 0; i < this.rows; i++) {
-                    this.grid[i] = new Array(this.cols).fill(0);
-                    this.revealed[i] = new Array(this.cols).fill(false);
-                    this.flags[i] = new Array(this.cols).fill(false);
+                    for (let j = 0; j < this.cols; j++) {
+                        this.grid[i][j] = 0;
+                        this.revealed[i][j] = false;
+                        this.flags[i][j] = false;
+                        this.cells[i][j].className = 'cell';
+                        this.cells[i][j].textContent = '';
+                    }
                 }
 
-                // Place mines randomly
-                let minesPlaced = 0;
-                while (minesPlaced < this.mines) {
-                    const row = Math.floor(Math.random() * this.rows);
-                    const col = Math.floor(Math.random() * this.cols);
-                    if (this.grid[row][col] !== -1) {
-                        this.grid[row][col] = -1;
-                        minesPlaced++;
+                this.updateStatus();
+            }
+
+            placeMines(firstRow, firstCol) {
+                // Create array of all possible positions
+                const positions = [];
+                for (let i = 0; i < this.rows; i++) {
+                    for (let j = 0; j < this.cols; j++) {
+                        // Skip the first clicked cell and its adjacent cells
+                        if (Math.abs(i - firstRow) <= 1 && Math.abs(j - firstCol) <= 1) continue;
+                        positions.push([i, j]);
                     }
+                }
+
+                // Shuffle positions using Fisher-Yates algorithm
+                for (let i = positions.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [positions[i], positions[j]] = [positions[j], positions[i]];
+                }
+
+                // Place mines
+                for (let i = 0; i < this.mines; i++) {
+                    const [row, col] = positions[i];
+                    this.grid[row][col] = -1;
                 }
 
                 // Calculate numbers for adjacent cells
@@ -243,22 +307,18 @@
                         }
                     }
                 }
-
-                this.render();
-                this.updateStatus();
             }
 
             countAdjacentMines(row, col) {
                 let count = 0;
-                for (let i = -1; i <= 1; i++) {
-                    for (let j = -1; j <= 1; j++) {
-                        const newRow = row + i;
-                        const newCol = col + j;
-                        if (newRow >= 0 && newRow < this.rows && 
-                            newCol >= 0 && newCol < this.cols && 
-                            this.grid[newRow][newCol] === -1) {
-                            count++;
-                        }
+                const startRow = Math.max(0, row - 1);
+                const endRow = Math.min(this.rows - 1, row + 1);
+                const startCol = Math.max(0, col - 1);
+                const endCol = Math.min(this.cols - 1, col + 1);
+
+                for (let i = startRow; i <= endRow; i++) {
+                    for (let j = startCol; j <= endCol; j++) {
+                        if (this.grid[i][j] === -1) count++;
                     }
                 }
                 return count;
@@ -271,6 +331,7 @@
                     this.firstClick = false;
                     this.startTime = Date.now();
                     this.startTimer();
+                    this.placeMines(row, col);
                 }
 
                 if (this.grid[row][col] === -1) {
@@ -282,24 +343,34 @@
                     return;
                 }
 
-                this.revealed[row][col] = true;
+                this.revealCell(row, col);
+                this.checkWin();
+            }
 
-                if (this.grid[row][col] === 0) {
-                    // Reveal adjacent cells if current cell is empty
-                    for (let i = -1; i <= 1; i++) {
-                        for (let j = -1; j <= 1; j++) {
-                            const newRow = row + i;
-                            const newCol = col + j;
-                            if (newRow >= 0 && newRow < this.rows && 
-                                newCol >= 0 && newCol < this.cols) {
-                                this.reveal(newRow, newCol);
-                            }
-                        }
-                    }
+            revealCell(row, col) {
+                if (this.revealed[row][col]) return;
+                
+                this.revealed[row][col] = true;
+                const cell = this.cells[row][col];
+                cell.classList.add('revealed');
+
+                if (this.grid[row][col] > 0) {
+                    cell.textContent = this.grid[row][col];
+                    cell.setAttribute('data-value', this.grid[row][col]);
+                    return;
                 }
 
-                this.render();
-                this.checkWin();
+                // Reveal adjacent cells if current cell is empty
+                const startRow = Math.max(0, row - 1);
+                const endRow = Math.min(this.rows - 1, row + 1);
+                const startCol = Math.max(0, col - 1);
+                const endCol = Math.min(this.cols - 1, col + 1);
+
+                for (let i = startRow; i <= endRow; i++) {
+                    for (let j = startCol; j <= endCol; j++) {
+                        this.revealCell(i, j);
+                    }
+                }
             }
 
             toggleFlag(row, col) {
@@ -309,7 +380,15 @@
                 this.remainingFlags += this.flags[row][col] ? -1 : 1;
                 this.remainingMines += this.flags[row][col] ? -1 : 1;
 
-                this.render();
+                const cell = this.cells[row][col];
+                if (this.flags[row][col]) {
+                    cell.classList.add('flagged');
+                    cell.textContent = '⚑';
+                } else {
+                    cell.classList.remove('flagged');
+                    cell.textContent = '';
+                }
+
                 this.updateStatus();
                 this.checkWin();
             }
@@ -319,9 +398,19 @@
                     for (let j = 0; j < this.cols; j++) {
                         this.revealed[i][j] = true;
                         this.flags[i][j] = false;
+                        const cell = this.cells[i][j];
+                        cell.classList.remove('flagged');
+                        
+                        if (this.grid[i][j] === -1) {
+                            cell.classList.add('mine');
+                            cell.textContent = '*';
+                        } else if (this.grid[i][j] > 0) {
+                            cell.classList.add('revealed');
+                            cell.textContent = this.grid[i][j];
+                            cell.setAttribute('data-value', this.grid[i][j]);
+                        }
                     }
                 }
-                this.render();
             }
 
             checkWin() {
@@ -340,68 +429,15 @@
                 }
             }
 
-            render() {
-                const gridElement = document.getElementById('grid');
-                gridElement.innerHTML = '';
-
-                for (let i = 0; i < this.rows; i++) {
-                    const row = document.createElement('div');
-                    row.className = 'row';
-
-                    for (let j = 0; j < this.cols; j++) {
-                        const cell = document.createElement('div');
-                        cell.className = 'cell';
-                        
-                        if (this.revealed[i][j]) {
-                            cell.classList.add('revealed');
-                            if (this.grid[i][j] === -1) {
-                                cell.classList.add('mine');
-                                cell.textContent = '*';
-                            } else if (this.grid[i][j] > 0) {
-                                cell.textContent = this.grid[i][j];
-                                cell.setAttribute('data-value', this.grid[i][j]);
-                            }
-                        } else if (this.flags[i][j]) {
-                            cell.classList.add('flagged');
-                            cell.textContent = '⚑';
-                        }
-
-                        cell.addEventListener('click', () => this.reveal(i, j));
-                        cell.addEventListener('contextmenu', (e) => {
-                            e.preventDefault();
-                            this.toggleFlag(i, j);
-                        });
-
-                        row.appendChild(cell);
-                    }
-                    gridElement.appendChild(row);
-                }
-            }
-
-            getNumberColor(num) {
-                const colors = [
-                    '#ffffff', // 0
-                    '#0000ff', // 1
-                    '#008000', // 2
-                    '#ff0000', // 3
-                    '#000080', // 4
-                    '#800000', // 5
-                    '#008080', // 6
-                    '#000000', // 7
-                    '#808080'  // 8
-                ];
-                return colors[num] || '#ffffff';
-            }
-
             updateStatus() {
-                document.getElementById('mines-count').textContent = `Mines: ${this.remainingMines}`;
-                document.getElementById('flags').textContent = `Flags: ${this.remainingFlags}`;
+                this.minesCountElement.textContent = `Mines: ${this.remainingMines}`;
+                this.flagsElement.textContent = `Flags: ${this.remainingFlags}`;
             }
 
             startTimer() {
                 this.timer = setInterval(() => {
                     const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
-                    document.getElementById('timer').textContent = `Time: ${elapsed}`;
+                    this.timerElement.textContent = `Time: ${elapsed}`;
                 }, 1000);
             }
         }
